@@ -13,8 +13,11 @@ target/
 
 # Logs and OS files
 *.log
+.venv/
+.uv-cache/
 .DS_Store
 Thumbs.db
+*:Zone.Identifier
 
 # Android Studio and Android generated files
 captures/
