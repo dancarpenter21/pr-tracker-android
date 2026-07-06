@@ -9,7 +9,8 @@ Wilks score, major-lift totals, and progress graphs.
 - Room over local SQLite for all app data.
 - Rust business-logic core packaged as `libprtracker_core.so`.
 - Manual JNI bridge through `com.prtracker.core.PrCore`.
-- No network/runtime permissions and no ads.
+- Google Drive app-data backup and restore.
+- No ads.
 
 ## WSL Setup
 
@@ -44,3 +45,20 @@ Install a debug build on a connected device or Windows-side emulator:
 ```sh
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
+
+## Google Drive Backup Setup
+
+The app uses Google Drive's private app data folder and requests only the
+`https://www.googleapis.com/auth/drive.appdata` scope.
+
+Before Drive sign-in works on a device:
+
+1. Create or select a Google Cloud project.
+2. Enable the Google Drive API.
+3. Configure the OAuth consent screen.
+4. Create an Android OAuth client for package `com.prtracker`.
+5. Add the SHA-1 fingerprint for the debug or release signing key you are
+   installing with.
+
+The app does not need `google-services.json` for this direct Drive REST
+integration.

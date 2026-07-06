@@ -10,13 +10,35 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 
 class AppContainer(context: Context) {
-    private val database = Room.databaseBuilder(
-        context,
-        AppDatabase::class.java,
-        "pr-tracker.db",
-    ).build()
+    private val appContext = context.applicationContext
+    private var database = createDatabase()
 
-    val repository = Repository(database)
+    var repository = Repository(database)
+        private set
+    val driveAuthManager = DriveAuthManager(appContext)
+    val driveBackupClient = DriveBackupClient()
+    val databaseBackupManager = DatabaseBackupManager(
+        context = appContext,
+        databaseProvider = { database },
+        closeDatabase = { database.close() },
+        reopenDatabase = {
+            database = createDatabase()
+            repository = Repository(database)
+        },
+    )
+    val driveBackupCoordinator = DriveBackupCoordinator(
+        authManager = driveAuthManager,
+        driveClient = driveBackupClient,
+        databaseBackupManager = databaseBackupManager,
+    )
+
+    private fun createDatabase(): AppDatabase {
+        return Room.databaseBuilder(
+            appContext,
+            AppDatabase::class.java,
+            DatabaseBackupManager.DATABASE_NAME,
+        ).build()
+    }
 }
 
 class Repository(private val db: AppDatabase) {

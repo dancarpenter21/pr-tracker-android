@@ -1,5 +1,6 @@
 package com.prtracker.ui
 
+import android.content.Intent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,16 +16,19 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -35,13 +39,16 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -74,12 +81,26 @@ private enum class Tab(val label: String, val icon: ImageVector) {
     Lifts("Lifts", Icons.Default.FitnessCenter),
     Progress("Progress", Icons.Default.BarChart),
     Profile("Profile", Icons.Default.Person),
+    Backup("Backup", Icons.Default.CloudUpload),
 }
 
 @Composable
-fun PRTrackerApp(viewModel: AppViewModel) {
+fun PRTrackerApp(
+    viewModel: AppViewModel,
+    onSignInRequested: () -> Unit,
+    onAuthResolutionRequested: (Intent) -> Unit,
+    onRestoreCompleted: () -> Unit,
+) {
     val state by viewModel.state.collectAsState()
+    val backupState by viewModel.backupState.collectAsState()
     var tab by remember { mutableStateOf(Tab.Dashboard) }
+
+    LaunchedEffect(backupState.authResolutionIntent) {
+        backupState.authResolutionIntent?.let {
+            onAuthResolutionRequested(it)
+            viewModel.consumeAuthResolution()
+        }
+    }
 
     Scaffold(
         bottomBar = {
@@ -109,6 +130,12 @@ fun PRTrackerApp(viewModel: AppViewModel) {
                 Tab.Lifts -> LiftsScreen(state.lifts, viewModel)
                 Tab.Progress -> ProgressScreen(state)
                 Tab.Profile -> ProfileScreen(state, viewModel)
+                Tab.Backup -> BackupScreen(
+                    backupState = backupState,
+                    viewModel = viewModel,
+                    onSignInRequested = onSignInRequested,
+                    onRestoreCompleted = onRestoreCompleted,
+                )
             }
         }
     }
@@ -312,6 +339,86 @@ private fun ProfileScreen(state: AppState, viewModel: AppViewModel) {
             Icon(Icons.Default.Edit, contentDescription = null)
             Spacer(Modifier.width(8.dp))
             Text("Save profile")
+        }
+    }
+}
+
+@Composable
+private fun BackupScreen(
+    backupState: BackupUiState,
+    viewModel: AppViewModel,
+    onSignInRequested: () -> Unit,
+    onRestoreCompleted: () -> Unit,
+) {
+    var confirmRestore by remember { mutableStateOf(false) }
+
+    if (confirmRestore) {
+        AlertDialog(
+            onDismissRequest = { confirmRestore = false },
+            title = { Text("Restore from Google Drive?") },
+            text = { Text("This replaces the local database with the Drive backup.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmRestore = false
+                        viewModel.restoreNow(onRestoreCompleted)
+                    },
+                ) { Text("Restore") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRestore = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Google Drive", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(
+                    backupState.accountEmail ?: "Not signed in",
+                    color = if (backupState.accountEmail == null) Color(0xFF64748B) else Color(0xFF047857),
+                )
+                backupState.latestBackup?.let {
+                    Text("Last backup: ${it.modifiedTime.ifBlank { "unknown" }}", color = Color(0xFF64748B))
+                    if (it.size > 0) Text("Size: ${it.size} bytes", color = Color(0xFF64748B))
+                }
+                backupState.message?.let {
+                    Text(it, color = Color(0xFF334155))
+                }
+                if (backupState.busy) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CircularProgressIndicator()
+                        Text("Working...")
+                    }
+                }
+            }
+        }
+
+        if (backupState.accountEmail == null) {
+            Button(onClick = onSignInRequested, enabled = !backupState.busy) {
+                Icon(Icons.Default.Person, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Sign in")
+            }
+        } else {
+            Button(onClick = { viewModel.backupNow() }, enabled = !backupState.busy) {
+                Icon(Icons.Default.CloudUpload, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Back up now")
+            }
+            OutlinedButton(
+                onClick = { confirmRestore = true },
+                enabled = !backupState.busy && backupState.latestBackup != null,
+            ) {
+                Text("Restore from Drive")
+            }
+            OutlinedButton(onClick = { viewModel.refreshBackupStatus() }, enabled = !backupState.busy) {
+                Text("Refresh status")
+            }
+            TextButton(onClick = { viewModel.signOut() }, enabled = !backupState.busy) {
+                Text("Sign out")
+            }
         }
     }
 }

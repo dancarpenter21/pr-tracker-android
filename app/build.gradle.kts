@@ -92,6 +92,8 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.9.8")
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
+    implementation("com.google.android.gms:play-services-auth:21.6.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     kapt("androidx.room:room-compiler:$roomVersion")
 
     testImplementation("junit:junit:4.13.2")
