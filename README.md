@@ -1,6 +1,6 @@
 # PR Tracker For Android
 
-![PR Background Landscape](PR-bckgnd-landscape.png)
+![PR Background Landscape](./PR-bkgnd-landscape.png)
 
 Offline Android app for tracking weightlifting PRs, estimated 1RM, bodyweight,
 Wilks score, major-lift totals, and progress graphs.
