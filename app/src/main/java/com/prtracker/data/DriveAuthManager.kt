@@ -8,6 +8,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.android.gms.common.api.Scope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -21,15 +22,26 @@ class DriveAuthManager(private val context: Context) {
 
     fun signInIntent(): Intent = client.signInIntent
 
-    fun handleSignInResult(data: Intent?): Result<String> {
-        return runCatching {
+    fun handleSignInResult(data: Intent?): SignInResult {
+        return try {
             val account = GoogleSignIn.getSignedInAccountFromIntent(data)
                 .getResult(ApiException::class.java)
-            account.email ?: "Google account"
+            SignInResult.Success(account.email ?: "Google account")
+        } catch (error: ApiException) {
+            val statusName = CommonStatusCodes.getStatusCodeString(error.statusCode)
+            val setupHint = if (error.statusCode == CommonStatusCodes.DEVELOPER_ERROR) {
+                " Check the Google Cloud Android OAuth client package name and SHA-1."
+            } else {
+                ""
+            }
+            SignInResult.Failure("Google sign-in failed: $statusName (${error.statusCode}).$setupHint")
+        } catch (error: Exception) {
+            SignInResult.Failure(error.message ?: "Google sign-in failed.")
         }
     }
 
-    fun accountEmail(): String? = currentAccount()?.email
+    fun accountEmail(): String? = GoogleSignIn.getLastSignedInAccount(context)?.email
+    fun hasDrivePermission(): Boolean = currentAccount() != null
 
     suspend fun signOut() {
         withContext(Dispatchers.IO) {
@@ -68,4 +80,9 @@ sealed interface AuthTokenResult {
     data class NeedsResolution(val intent: Intent) : AuthTokenResult
     data class Failure(val message: String) : AuthTokenResult
     data object NotSignedIn : AuthTokenResult
+}
+
+sealed interface SignInResult {
+    data class Success(val accountEmail: String) : SignInResult
+    data class Failure(val message: String) : SignInResult
 }

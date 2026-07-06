@@ -14,6 +14,7 @@ import com.prtracker.data.DriveBackupFile
 import com.prtracker.data.LiftEntity
 import com.prtracker.data.NeedsGoogleResolution
 import com.prtracker.data.Repository
+import com.prtracker.data.SignInResult
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -35,6 +36,8 @@ class AppViewModel(
     )
     private val _backupState = MutableStateFlow(BackupUiState())
     val backupState: StateFlow<BackupUiState> = _backupState.asStateFlow()
+    private val _profileState = MutableStateFlow(ProfileUiState())
+    val profileState: StateFlow<ProfileUiState> = _profileState.asStateFlow()
 
     var lastErrors: List<String> = emptyList()
         private set
@@ -45,7 +48,17 @@ class AppViewModel(
     }
 
     fun saveProfile(sex: Sex, preferredUnit: WeightUnit, bodyweight: Double?) {
-        viewModelScope.launch { repository.saveProfile(sex, preferredUnit, bodyweight) }
+        viewModelScope.launch {
+            _profileState.value = ProfileUiState(saving = true)
+            repository.saveProfile(sex, preferredUnit, bodyweight).fold(
+                onSuccess = { _profileState.value = ProfileUiState(message = "Profile saved.") },
+                onFailure = {
+                    _profileState.value = ProfileUiState(
+                        error = it.message ?: "Unable to save profile.",
+                    )
+                },
+            )
+        }
     }
 
     fun addLift(name: String) {
@@ -82,27 +95,33 @@ class AppViewModel(
 
     fun handleSignInResult(data: Intent?) {
         val result = authManager.handleSignInResult(data)
+        val accountEmail = backupCoordinator.accountEmail()
         _backupState.value = _backupState.value.copy(
-            accountEmail = backupCoordinator.accountEmail(),
+            accountEmail = accountEmail,
+            driveReady = backupCoordinator.isDriveReady(),
             busy = false,
-            message = result.fold(
-                onSuccess = { "Signed in as $it." },
-                onFailure = { it.message ?: "Google sign-in failed." },
-            ),
+            message = when (result) {
+                is SignInResult.Success -> "Signed in as ${result.accountEmail}. Checking Drive access..."
+                is SignInResult.Failure -> result.message
+            },
             authResolutionIntent = null,
         )
-        refreshBackupStatus()
+        if (result is SignInResult.Success) {
+            refreshBackupStatus(keepMessage = true)
+        }
     }
 
-    fun refreshBackupStatus() {
+    fun refreshBackupStatus(keepMessage: Boolean = false) {
         viewModelScope.launch {
+            val accountEmail = backupCoordinator.accountEmail()
             _backupState.value = _backupState.value.copy(
-                accountEmail = backupCoordinator.accountEmail(),
-                busy = backupCoordinator.accountEmail() != null,
-                message = null,
+                accountEmail = accountEmail,
+                driveReady = backupCoordinator.isDriveReady(),
+                busy = accountEmail != null,
+                message = if (keepMessage) _backupState.value.message else null,
                 authResolutionIntent = null,
             )
-            if (backupCoordinator.accountEmail() == null) {
+            if (accountEmail == null) {
                 _backupState.value = _backupState.value.copy(busy = false, latestBackup = null)
                 return@launch
             }
@@ -116,7 +135,11 @@ class AppViewModel(
                     busy = false,
                     message = result.message,
                 )
-                BackupOperationResult.NotSignedIn -> _backupState.value = BackupUiState(message = "Sign in to use Google Drive backup.")
+                BackupOperationResult.NotSignedIn -> _backupState.value = _backupState.value.copy(
+                    busy = false,
+                    driveReady = false,
+                    message = "Signed in, but Drive app-data authorization is not ready. Verify the Google Cloud OAuth client package and SHA-1.",
+                )
             }
         }
     }
@@ -143,7 +166,8 @@ class AppViewModel(
                 )
                 BackupOperationResult.NotSignedIn -> _backupState.value = _backupState.value.copy(
                     busy = false,
-                    message = "Sign in to use Google Drive backup.",
+                    driveReady = false,
+                    message = "Drive authorization is not ready. Verify the Google Cloud OAuth client package and SHA-1.",
                 )
             }
         }
@@ -167,7 +191,8 @@ class AppViewModel(
                 )
                 BackupOperationResult.NotSignedIn -> _backupState.value = _backupState.value.copy(
                     busy = false,
-                    message = "Sign in to use Google Drive backup.",
+                    driveReady = false,
+                    message = "Drive authorization is not ready. Verify the Google Cloud OAuth client package and SHA-1.",
                 )
             }
         }
@@ -187,12 +212,21 @@ class AppViewModel(
                 message = "Google Drive needs authorization.",
             )
             BackupOperationResult.Failure("Google Drive needs authorization.")
+        } catch (error: Exception) {
+            BackupOperationResult.Failure(error.message ?: "Google Drive operation failed.")
         }
     }
 }
 
+data class ProfileUiState(
+    val saving: Boolean = false,
+    val message: String? = null,
+    val error: String? = null,
+)
+
 data class BackupUiState(
     val accountEmail: String? = null,
+    val driveReady: Boolean = false,
     val latestBackup: DriveBackupFile? = null,
     val busy: Boolean = false,
     val message: String? = null,

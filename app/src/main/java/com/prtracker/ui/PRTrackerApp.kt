@@ -2,7 +2,10 @@ package com.prtracker.ui
 
 import android.content.Intent
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -61,8 +64,11 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.prtracker.R
 import com.prtracker.core.MajorLiftBest
 import com.prtracker.core.PrCore
 import com.prtracker.core.Sex
@@ -70,6 +76,7 @@ import com.prtracker.core.WeightUnit
 import com.prtracker.data.AppState
 import com.prtracker.data.EntryWithLift
 import com.prtracker.data.LiftEntity
+import com.prtracker.data.kgTo
 import com.prtracker.data.toWeightUnit
 import java.text.DateFormat
 import java.util.Date
@@ -102,40 +109,59 @@ fun PRTrackerApp(
         }
     }
 
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                Tab.entries.forEach {
-                    NavigationBarItem(
-                        selected = tab == it,
-                        onClick = { tab = it },
-                        icon = { Icon(it.icon, contentDescription = it.label) },
-                        label = { Text(it.label) },
+    Box(Modifier.fillMaxSize()) {
+        Image(
+            painter = painterResource(R.drawable.app_background),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.70f)),
+        )
+        Scaffold(
+            containerColor = Color.Transparent,
+            bottomBar = {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)) {
+                    Tab.entries.forEach {
+                        NavigationBarItem(
+                            selected = tab == it,
+                            onClick = { tab = it },
+                            icon = { Icon(it.icon, contentDescription = it.label) },
+                            label = { Text(it.label) },
+                        )
+                    }
+                }
+            },
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(16.dp),
+            ) {
+                Text(
+                    "PR Tracker",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.height(12.dp))
+                when (tab) {
+                    Tab.Dashboard -> DashboardScreen(state)
+                    Tab.Log -> LogScreen(state, viewModel)
+                    Tab.Lifts -> LiftsScreen(state.lifts, viewModel)
+                    Tab.Progress -> ProgressScreen(state)
+                    Tab.Profile -> ProfileScreen(state, viewModel)
+                    Tab.Backup -> BackupScreen(
+                        backupState = backupState,
+                        viewModel = viewModel,
+                        onSignInRequested = onSignInRequested,
+                        onRestoreCompleted = onRestoreCompleted,
                     )
                 }
-            }
-        },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
-        ) {
-            Text("PR Tracker", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(12.dp))
-            when (tab) {
-                Tab.Dashboard -> DashboardScreen(state)
-                Tab.Log -> LogScreen(state, viewModel)
-                Tab.Lifts -> LiftsScreen(state.lifts, viewModel)
-                Tab.Progress -> ProgressScreen(state)
-                Tab.Profile -> ProfileScreen(state, viewModel)
-                Tab.Backup -> BackupScreen(
-                    backupState = backupState,
-                    viewModel = viewModel,
-                    onSignInRequested = onSignInRequested,
-                    onRestoreCompleted = onRestoreCompleted,
-                )
             }
         }
     }
@@ -178,9 +204,12 @@ private fun MetricGrid(metrics: List<Pair<String, String>>) {
         metrics.chunked(2).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 row.forEach { (label, value) ->
-                    Card(modifier = Modifier.weight(1f), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Card(
+                        modifier = Modifier.weight(1f),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f)),
+                    ) {
                         Column(Modifier.padding(14.dp)) {
-                            Text(label, color = Color(0xFF64748B))
+                            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         }
                     }
@@ -315,10 +344,12 @@ private fun ProgressScreen(state: AppState) {
 
 @Composable
 private fun ProfileScreen(state: AppState, viewModel: AppViewModel) {
+    val profileState by viewModel.profileState.collectAsState()
     var sex by remember(state.profile.sex) { mutableStateOf(if (state.profile.sex == "female") Sex.Female else Sex.Male) }
     var unit by remember(state.profile.preferredUnit) { mutableStateOf(state.profile.preferredUnit.toWeightUnit()) }
-    var bodyweight by remember(state.profile.bodyweightKg) {
-        mutableStateOf(state.profile.bodyweightKg?.oneDecimal().orEmpty())
+    var bodyweight by remember(state.profile.bodyweightKg, state.profile.preferredUnit) {
+        val displayUnit = state.profile.preferredUnit.toWeightUnit()
+        mutableStateOf(state.profile.bodyweightKg?.kgTo(displayUnit)?.oneDecimal().orEmpty())
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -333,13 +364,28 @@ private fun ProfileScreen(state: AppState, viewModel: AppViewModel) {
             }
         }
         Text("Preferred unit", fontWeight = FontWeight.SemiBold)
-        UnitPicker(unit) { unit = it }
+        UnitPicker(unit) { newUnit ->
+            val current = bodyweight.toDoubleOrNull()
+            if (current != null && newUnit != unit) {
+                val currentKg = when (unit) {
+                    WeightUnit.Kg -> current
+                    WeightUnit.Lb -> current * 0.45359237
+                }
+                bodyweight = currentKg.kgTo(newUnit).oneDecimal()
+            }
+            unit = newUnit
+        }
         NumberField("Current bodyweight", bodyweight, { bodyweight = it }, Modifier.fillMaxWidth())
-        Button(onClick = { viewModel.saveProfile(sex, unit, bodyweight.toDoubleOrNull()) }) {
+        Button(
+            onClick = { viewModel.saveProfile(sex, unit, bodyweight.toDoubleOrNull()) },
+            enabled = !profileState.saving,
+        ) {
             Icon(Icons.Default.Edit, contentDescription = null)
             Spacer(Modifier.width(8.dp))
-            Text("Save profile")
+            Text(if (profileState.saving) "Saving..." else "Save profile")
         }
+        profileState.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+        profileState.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
 }
 
@@ -372,19 +418,23 @@ private fun BackupScreen(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f))) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Google Drive", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(
-                    backupState.accountEmail ?: "Not signed in",
-                    color = if (backupState.accountEmail == null) Color(0xFF64748B) else Color(0xFF047857),
+                    when {
+                        backupState.accountEmail == null -> "Not signed in"
+                        backupState.driveReady -> "${backupState.accountEmail} - Drive ready"
+                        else -> "${backupState.accountEmail} - Drive authorization pending"
+                    },
+                    color = if (backupState.driveReady) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 backupState.latestBackup?.let {
-                    Text("Last backup: ${it.modifiedTime.ifBlank { "unknown" }}", color = Color(0xFF64748B))
-                    if (it.size > 0) Text("Size: ${it.size} bytes", color = Color(0xFF64748B))
+                    Text("Last backup: ${it.modifiedTime.ifBlank { "unknown" }}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (it.size > 0) Text("Size: ${it.size} bytes", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 backupState.message?.let {
-                    Text(it, color = Color(0xFF334155))
+                    Text(it, color = MaterialTheme.colorScheme.onSurface)
                 }
                 if (backupState.busy) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -402,19 +452,22 @@ private fun BackupScreen(
                 Text("Sign in")
             }
         } else {
-            Button(onClick = { viewModel.backupNow() }, enabled = !backupState.busy) {
+            Button(onClick = { viewModel.backupNow() }, enabled = !backupState.busy && backupState.driveReady) {
                 Icon(Icons.Default.CloudUpload, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text("Back up now")
             }
             OutlinedButton(
                 onClick = { confirmRestore = true },
-                enabled = !backupState.busy && backupState.latestBackup != null,
+                enabled = !backupState.busy && backupState.driveReady && backupState.latestBackup != null,
             ) {
                 Text("Restore from Drive")
             }
             OutlinedButton(onClick = { viewModel.refreshBackupStatus() }, enabled = !backupState.busy) {
                 Text("Refresh status")
+            }
+            if (!backupState.driveReady) {
+                Text("If this stays pending, configure the Google Cloud Android OAuth client for com.prtracker and this APK's SHA-1.", color = MaterialTheme.colorScheme.secondary)
             }
             TextButton(onClick = { viewModel.signOut() }, enabled = !backupState.busy) {
                 Text("Sign out")
@@ -448,7 +501,7 @@ private fun NumberField(label: String, value: String, onValue: (String) -> Unit,
 
 @Composable
 private fun EntryRow(entry: EntryWithLift, onDelete: (() -> Unit)?) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f))) {
         ListItem(
             headlineContent = { Text("${entry.liftName}: ${entry.sets}x${entry.reps} @ ${entry.weightKg.kg()}") },
             supportingContent = {
@@ -471,9 +524,12 @@ private fun EntryRow(entry: EntryWithLift, onDelete: (() -> Unit)?) {
 @Composable
 private fun ProgressChart(values: List<Double>) {
     val lineColor = MaterialTheme.colorScheme.primary
-    Card(colors = CardDefaults.cardColors(containerColor = Color.White), modifier = Modifier.fillMaxWidth()) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
         if (values.size < 2) {
-            Text("Add at least two entries", modifier = Modifier.padding(16.dp), color = Color(0xFF64748B))
+            Text("Add at least two entries", modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             Canvas(
                 modifier = Modifier

@@ -11,6 +11,7 @@ class DriveBackupCoordinator(
     private val databaseBackupManager: DatabaseBackupManager,
 ) {
     fun accountEmail(): String? = authManager.accountEmail()
+    fun isDriveReady(): Boolean = authManager.hasDrivePermission()
 
     suspend fun signOut() = authManager.signOut()
 

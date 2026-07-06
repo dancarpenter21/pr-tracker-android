@@ -61,25 +61,27 @@ class Repository(private val db: AppDatabase) {
         ).forEach { db.liftDao().insert(it) }
     }
 
-    suspend fun saveProfile(sex: Sex, preferredUnit: WeightUnit, bodyweight: Double?) {
-        val bodyweightKg = bodyweight?.let {
-            PrCore.calculateEntry(
-                weight = it,
-                unit = preferredUnit,
-                sets = 1,
-                reps = 1,
-                bodyweight = null,
-                sex = null,
-                previousBestEstimatedOneRmKg = null,
-            ).weightKg
+    suspend fun saveProfile(sex: Sex, preferredUnit: WeightUnit, bodyweight: Double?): Result<Unit> {
+        return runCatching {
+            val bodyweightKg = bodyweight?.let {
+                PrCore.calculateEntry(
+                    weight = it,
+                    unit = preferredUnit,
+                    sets = 1,
+                    reps = 1,
+                    bodyweight = null,
+                    sex = null,
+                    previousBestEstimatedOneRmKg = null,
+                ).weightKg
+            }
+            db.profileDao().upsert(
+                ProfileEntity(
+                    sex = sex.jsonValue,
+                    preferredUnit = preferredUnit.jsonValue,
+                    bodyweightKg = bodyweightKg,
+                ),
+            )
         }
-        db.profileDao().upsert(
-            ProfileEntity(
-                sex = sex.jsonValue,
-                preferredUnit = preferredUnit.jsonValue,
-                bodyweightKg = bodyweightKg,
-            ),
-        )
     }
 
     suspend fun addLift(name: String) {
@@ -150,6 +152,11 @@ private suspend fun AppDatabase.profileDaoSnapshot(): ProfileEntity {
 
 fun String.toSex(): Sex = if (this == Sex.Female.jsonValue) Sex.Female else Sex.Male
 fun String.toWeightUnit(): WeightUnit = if (this == WeightUnit.Kg.jsonValue) WeightUnit.Kg else WeightUnit.Lb
+
+fun Double.kgTo(unit: WeightUnit): Double = when (unit) {
+    WeightUnit.Kg -> this
+    WeightUnit.Lb -> this / 0.45359237
+}
 
 private fun Double.fromKg(unit: WeightUnit): Double = when (unit) {
     WeightUnit.Kg -> this

@@ -62,3 +62,17 @@ Before Drive sign-in works on a device:
 
 The app does not need `google-services.json` for this direct Drive REST
 integration.
+
+For the debug APK, get the SHA-1 with:
+
+```sh
+keytool -list -v \
+  -alias androiddebugkey \
+  -keystore ~/.android/debug.keystore \
+  -storepass android \
+  -keypass android
+```
+
+If Google sign-in shows `DEVELOPER_ERROR` or stays in a Drive authorization
+pending state, the Android OAuth client package name or SHA-1 does not match
+the installed APK.
