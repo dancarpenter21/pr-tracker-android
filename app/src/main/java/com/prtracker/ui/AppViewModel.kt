@@ -47,10 +47,10 @@ class AppViewModel(
         refreshBackupStatus()
     }
 
-    fun saveProfile(sex: Sex, preferredUnit: WeightUnit, bodyweight: Double?) {
+    fun saveProfile(sex: Sex, preferredUnit: WeightUnit) {
         viewModelScope.launch {
             _profileState.value = ProfileUiState(saving = true)
-            repository.saveProfile(sex, preferredUnit, bodyweight).fold(
+            repository.saveProfile(sex, preferredUnit).fold(
                 onSuccess = { _profileState.value = ProfileUiState(message = "Profile saved.") },
                 onFailure = {
                     _profileState.value = ProfileUiState(
@@ -87,9 +87,10 @@ class AppViewModel(
         reps: Int,
         bodyweight: Double?,
         notes: String,
+        performedAt: Long,
     ) {
         viewModelScope.launch {
-            lastErrors = repository.addEntry(liftId, weight, unit, sets, reps, bodyweight, notes)
+            lastErrors = repository.addEntry(liftId, weight, unit, sets, reps, bodyweight, notes, performedAt)
         }
     }
 

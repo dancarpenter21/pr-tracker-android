@@ -61,24 +61,13 @@ class Repository(private val db: AppDatabase) {
         ).forEach { db.liftDao().insert(it) }
     }
 
-    suspend fun saveProfile(sex: Sex, preferredUnit: WeightUnit, bodyweight: Double?): Result<Unit> {
+    suspend fun saveProfile(sex: Sex, preferredUnit: WeightUnit): Result<Unit> {
         return runCatching {
-            val bodyweightKg = bodyweight?.let {
-                PrCore.calculateEntry(
-                    weight = it,
-                    unit = preferredUnit,
-                    sets = 1,
-                    reps = 1,
-                    bodyweight = null,
-                    sex = null,
-                    previousBestEstimatedOneRmKg = null,
-                ).weightKg
-            }
+            val currentProfile = db.profileDaoSnapshot()
             db.profileDao().upsert(
-                ProfileEntity(
+                currentProfile.copy(
                     sex = sex.jsonValue,
                     preferredUnit = preferredUnit.jsonValue,
-                    bodyweightKg = bodyweightKg,
                 ),
             )
         }
@@ -104,11 +93,15 @@ class Repository(private val db: AppDatabase) {
         reps: Int,
         bodyweight: Double?,
         notes: String,
+        performedAt: Long = System.currentTimeMillis(),
     ): List<String> {
         val profile = db.profileDaoSnapshot()
         val previousBest = db.entryDao().bestEstimatedOneRm(liftId)
         val sex = profile.sex.toSex()
         val bodyweightInput = bodyweight ?: profile.bodyweightKg?.fromKg(unit)
+        if (bodyweightInput == null) {
+            return listOf("Enter bodyweight to log this lift.")
+        }
         val calculation = PrCore.calculateEntry(
             weight = weight,
             unit = unit,
@@ -120,10 +113,13 @@ class Repository(private val db: AppDatabase) {
         )
         if (calculation.errors.isNotEmpty()) return calculation.errors
 
+        if (bodyweight != null && calculation.bodyweightKg != null) {
+            db.profileDao().upsert(profile.copy(bodyweightKg = calculation.bodyweightKg))
+        }
         db.entryDao().insert(
             LiftEntryEntity(
                 liftId = liftId,
-                performedAt = System.currentTimeMillis(),
+                performedAt = performedAt,
                 weightKg = calculation.weightKg,
                 originalUnit = unit.jsonValue,
                 sets = sets,
