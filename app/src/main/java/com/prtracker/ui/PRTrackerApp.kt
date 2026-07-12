@@ -1,6 +1,7 @@
 package com.prtracker.ui
 
 import android.content.Intent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,7 +26,6 @@ import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
@@ -52,6 +53,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -62,6 +64,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -71,6 +74,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.prtracker.R
@@ -90,9 +94,8 @@ import java.util.Date
 import kotlin.math.max
 
 private enum class Tab(val label: String, val icon: ImageVector) {
-    Lifts("Lifts", Icons.Default.FitnessCenter),
-    Log("Log", Icons.Default.Add),
     Progress("Progress", Icons.Default.BarChart),
+    Log("Log", Icons.Default.Add),
     Profile("Profile", Icons.Default.Person),
     Backup("Backup", Icons.Default.CloudUpload),
 }
@@ -106,7 +109,7 @@ fun PRTrackerApp(
 ) {
     val state by viewModel.state.collectAsState()
     val backupState by viewModel.backupState.collectAsState()
-    var tab by remember { mutableStateOf(Tab.Lifts) }
+    var tab by remember { mutableStateOf(Tab.Progress) }
 
     LaunchedEffect(backupState.authResolutionIntent) {
         backupState.authResolutionIntent?.let {
@@ -156,9 +159,8 @@ fun PRTrackerApp(
                 )
                 Spacer(Modifier.height(12.dp))
                 when (tab) {
-                    Tab.Lifts -> LiftsScreen(state)
-                    Tab.Log -> LogScreen(state, viewModel)
                     Tab.Progress -> ProgressScreen(state)
+                    Tab.Log -> LogScreen(state, viewModel)
                     Tab.Profile -> ProfileScreen(state, viewModel)
                     Tab.Backup -> BackupScreen(
                         backupState = backupState,
@@ -173,7 +175,7 @@ fun PRTrackerApp(
 }
 
 @Composable
-private fun LiftsScreen(state: AppState) {
+private fun ProgressScreen(state: AppState) {
     val displayUnit = state.profile.preferredUnit.toWeightUnit()
     val activeLifts = state.lifts.filterNot { it.archived }
     val activeLiftIds = activeLifts.map { it.id }
@@ -205,12 +207,17 @@ private fun LiftsScreen(state: AppState) {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     ProgressChart(
-                        points = selectedRepEntries.map {
-                            ChartPoint(
-                                value = it.weightKg.kgTo(displayUnit),
-                                performedAt = it.performedAt,
-                            )
-                        },
+                        series = listOf(
+                            ChartSeries(
+                                reps = selectedRepChart ?: 1,
+                                points = selectedRepEntries.map {
+                                    ChartPoint(
+                                        value = it.weightKg.kgTo(displayUnit),
+                                        performedAt = it.performedAt,
+                                    )
+                                },
+                            ),
+                        ),
                         yAxisLabel = "Weight (${displayUnit.label})",
                         valueLabel = displayUnit.label,
                     )
@@ -236,8 +243,24 @@ private fun LiftsScreen(state: AppState) {
         }
 
         item {
-            Text(selectedLift.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            if (selectedLift.major) AssistChip(onClick = {}, label = { Text("Major lift") })
+            ProgressChart(
+                series = entries
+                    .groupBy { it.reps }
+                    .map { (reps, repEntries) ->
+                        ChartSeries(
+                            reps = reps,
+                            points = repEntries.map {
+                                ChartPoint(
+                                    value = it.weightKg.kgTo(displayUnit),
+                                    performedAt = it.performedAt,
+                                )
+                            },
+                        )
+                    },
+                yAxisLabel = "Weight (${displayUnit.label})",
+                valueLabel = displayUnit.label,
+                title = "${selectedLift.name} progress",
+            )
         }
         item {
             Text("Rep maxes", fontWeight = FontWeight.SemiBold)
@@ -437,47 +460,62 @@ private fun LiftPicker(lifts: List<LiftEntity>, selectedLiftId: Long, onSelected
     var expanded by remember { mutableStateOf(false) }
     val selected = lifts.firstOrNull { it.id == selectedLiftId }
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-        OutlinedTextField(
-            value = selected?.name ?: "Select lift",
-            onValueChange = {},
-            readOnly = true,
-            label = { Text("Lift") },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+        Surface(
+            color = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            shape = RoundedCornerShape(4.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
             modifier = Modifier
                 .menuAnchor()
                 .fillMaxWidth(),
-        )
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        "Lift",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(selected?.name ?: "Select lift")
+                        if (selected?.major == true) {
+                            Spacer(Modifier.width(6.dp))
+                            Icon(
+                                Icons.Default.Star,
+                                contentDescription = "Major lift",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                }
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+            }
+        }
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             lifts.forEach { lift ->
                 DropdownMenuItem(
-                    text = { Text(lift.name) },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(lift.name)
+                            if (lift.major) {
+                                Spacer(Modifier.width(6.dp))
+                                Icon(
+                                    Icons.Default.Star,
+                                    contentDescription = "Major lift",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                        }
+                    },
                     onClick = {
                         onSelected(lift.id)
                         expanded = false
                     },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProgressScreen(state: AppState) {
-    val displayUnit = state.profile.preferredUnit.toWeightUnit()
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        state.lifts.filterNot { it.archived }.forEach { lift ->
-            val entries = state.entries.filter { it.liftId == lift.id }.sortedBy { it.performedAt }
-            item {
-                Text(lift.name, fontWeight = FontWeight.SemiBold)
-                ProgressChart(
-                    points = entries.map {
-                        ChartPoint(
-                            value = it.estimatedOneRmKg.kgTo(displayUnit),
-                            performedAt = it.performedAt,
-                        )
-                    },
-                    yAxisLabel = "e1RM (${displayUnit.label})",
-                    valueLabel = displayUnit.label,
                 )
             }
         }
@@ -692,32 +730,67 @@ private fun EntryRow(entry: EntryWithLift, displayUnit: WeightUnit, onDelete: ((
 }
 
 @Composable
-private fun ProgressChart(points: List<ChartPoint>, yAxisLabel: String, valueLabel: String) {
-    val lineColor = MaterialTheme.colorScheme.primary
+private fun ProgressChart(
+    series: List<ChartSeries>,
+    yAxisLabel: String,
+    valueLabel: String,
+    title: String? = null,
+) {
+    val orange = MaterialTheme.colorScheme.secondary
+    val primary = MaterialTheme.colorScheme.primary
     val axisColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val values = points.map { it.value }
+    val visibleSeries = series
+        .filter { it.points.isNotEmpty() }
+        .sortedBy { it.reps }
+    val allPoints = visibleSeries.flatMap { repSeries ->
+        repSeries.points.map { point -> repSeries to point }
+    }
+    val values = allPoints.map { it.second.value }
     val shortDateFormat = DateFormat.getDateInstance(DateFormat.SHORT)
+    fun lineColor(reps: Int): Color = if (reps == 1) {
+        orange
+    } else {
+        primary.copy(alpha = (0.92f - ((reps - 2) * 0.055f)).coerceAtLeast(0.42f))
+    }
+
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f)),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        if (points.size < 2) {
+        if (allPoints.isEmpty()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(yAxisLabel, color = axisColor, style = MaterialTheme.typography.labelMedium)
-                Text("Add at least two entries", color = axisColor)
-                points.firstOrNull()?.let {
+                title?.let {
                     Text(
-                        "${it.value.oneDecimal()} $valueLabel on ${shortDateFormat.format(Date(it.performedAt))}",
-                        color = axisColor,
-                        style = MaterialTheme.typography.labelMedium,
+                        it,
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
                     )
                 }
+                Text(yAxisLabel, color = axisColor, style = MaterialTheme.typography.labelMedium)
+                Text("No entries yet", color = axisColor)
             }
         } else {
             val min = values.minOrNull() ?: 0.0
-            val maxValue = max(values.maxOrNull() ?: 0.0, min + 1.0)
-            val latest = points.last()
+            val maxValue = values.maxOrNull() ?: min
+            val valuePadding = max((maxValue - min) * 0.08, 1.0)
+            val chartMin = min - valuePadding
+            val chartMax = maxValue + valuePadding
+            val firstTime = allPoints.minOf { it.second.performedAt }
+            val lastTime = allPoints.maxOf { it.second.performedAt }
+            val latest = allPoints.maxBy { it.second.performedAt }
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                title?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                     Text(yAxisLabel, color = axisColor, style = MaterialTheme.typography.labelMedium)
                     Text(
@@ -725,6 +798,23 @@ private fun ProgressChart(points: List<ChartPoint>, yAxisLabel: String, valueLab
                         color = axisColor,
                         style = MaterialTheme.typography.labelMedium,
                     )
+                }
+                visibleSeries.chunked(4).forEach { legendRow ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        legendRow.forEach { repSeries ->
+                            Text(
+                                text = if (repSeries.reps == 1) "1 rep" else "${repSeries.reps} reps",
+                                color = lineColor(repSeries.reps),
+                                fontWeight = if (repSeries.reps == 1) FontWeight.Bold else FontWeight.Normal,
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        repeat(4 - legendRow.size) { Spacer(Modifier.weight(1f)) }
+                    }
                 }
                 Canvas(
                     modifier = Modifier
@@ -738,8 +828,6 @@ private fun ProgressChart(points: List<ChartPoint>, yAxisLabel: String, valueLab
                     val plotBottom = size.height - axisInset
                     val plotWidth = (plotRight - plotLeft).coerceAtLeast(1f)
                     val plotHeight = (plotBottom - plotTop).coerceAtLeast(1f)
-                    val xStep = plotWidth / (points.lastIndex).coerceAtLeast(1)
-                    val path = Path()
 
                     drawLine(
                         color = axisColor,
@@ -754,30 +842,69 @@ private fun ProgressChart(points: List<ChartPoint>, yAxisLabel: String, valueLab
                         strokeWidth = 1.dp.toPx(),
                     )
 
-                    points.forEachIndexed { index, point ->
-                        val x = plotLeft + (index * xStep)
-                        val y = plotBottom - (((point.value - min) / (maxValue - min)).toFloat() * plotHeight)
-                        if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                        if (points.size <= 24 || index == 0 || index == points.lastIndex) {
-                            drawCircle(lineColor, radius = 4.dp.toPx(), center = Offset(x, y))
+                    visibleSeries.asReversed().forEach { repSeries ->
+                        val color = lineColor(repSeries.reps)
+                        val strokeWidth = (3.6f - ((repSeries.reps - 1) * 0.28f))
+                            .coerceAtLeast(1.15f)
+                            .dp
+                            .toPx()
+                        val path = Path()
+                        val sortedPoints = repSeries.points.sortedBy { it.performedAt }
+                        val offsets = sortedPoints.map { point ->
+                            val timeFraction = if (lastTime == firstTime) {
+                                0.5f
+                            } else {
+                                ((point.performedAt - firstTime).toDouble() / (lastTime - firstTime)).toFloat()
+                            }
+                            val x = plotLeft + (timeFraction * plotWidth)
+                            val yFraction = ((point.value - chartMin) / (chartMax - chartMin)).toFloat()
+                            Offset(x, plotBottom - (yFraction * plotHeight))
+                        }
+                        offsets.forEachIndexed { index, offset ->
+                            if (index == 0) path.moveTo(offset.x, offset.y) else path.lineTo(offset.x, offset.y)
+                        }
+
+                        if (repSeries.reps == 1) {
+                            drawPath(
+                                path,
+                                orange.copy(alpha = 0.16f),
+                                style = Stroke(width = 12.dp.toPx(), cap = StrokeCap.Round),
+                            )
+                            drawPath(
+                                path,
+                                orange.copy(alpha = 0.30f),
+                                style = Stroke(width = 7.dp.toPx(), cap = StrokeCap.Round),
+                            )
+                        }
+                        if (offsets.size > 1) {
+                            drawPath(path, color, style = Stroke(width = strokeWidth, cap = StrokeCap.Round))
+                        }
+                        offsets.forEachIndexed { index, offset ->
+                            if (sortedPoints.size <= 24 || index == 0 || index == sortedPoints.lastIndex) {
+                                if (repSeries.reps == 1) {
+                                    drawCircle(orange.copy(alpha = 0.20f), radius = 8.dp.toPx(), center = offset)
+                                }
+                                drawCircle(color, radius = (strokeWidth + 1.5.dp.toPx()), center = offset)
+                            }
                         }
                     }
-                    drawPath(path, lineColor, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
                 }
                 Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        shortDateFormat.format(Date(points.first().performedAt)),
+                        shortDateFormat.format(Date(firstTime)),
                         color = axisColor,
                         style = MaterialTheme.typography.labelMedium,
                     )
                     Text(
-                        shortDateFormat.format(Date(latest.performedAt)),
+                        shortDateFormat.format(Date(lastTime)),
                         color = axisColor,
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }
                 Text(
-                    "Latest: ${latest.value.oneDecimal()} $valueLabel on ${shortDateFormat.format(Date(latest.performedAt))}",
+                    "Latest: ${latest.first.reps} ${if (latest.first.reps == 1) "rep" else "reps"} at " +
+                        "${latest.second.value.oneDecimal()} $valueLabel on " +
+                        shortDateFormat.format(Date(latest.second.performedAt)),
                     color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -789,6 +916,11 @@ private fun ProgressChart(points: List<ChartPoint>, yAxisLabel: String, valueLab
 private data class ChartPoint(
     val value: Double,
     val performedAt: Long,
+)
+
+private data class ChartSeries(
+    val reps: Int,
+    val points: List<ChartPoint>,
 )
 
 private fun Double.formatWeight(unit: WeightUnit): String = "${kgTo(unit).oneDecimal()} ${unit.label}"

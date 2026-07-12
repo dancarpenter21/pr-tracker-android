@@ -51,7 +51,10 @@ class AppViewModel(
         viewModelScope.launch {
             _profileState.value = ProfileUiState(saving = true)
             repository.saveProfile(sex, preferredUnit).fold(
-                onSuccess = { _profileState.value = ProfileUiState(message = "Profile saved.") },
+                onSuccess = { changed ->
+                    _profileState.value = ProfileUiState(message = "Profile saved.")
+                    if (changed) backupAfterDataChange()
+                },
                 onFailure = {
                     _profileState.value = ProfileUiState(
                         error = it.message ?: "Unable to save profile.",
@@ -62,21 +65,28 @@ class AppViewModel(
     }
 
     fun addLift(name: String) {
-        viewModelScope.launch { repository.addLift(name) }
+        viewModelScope.launch {
+            if (repository.addLift(name)) backupAfterDataChange()
+        }
     }
 
     fun toggleMajor(lift: LiftEntity) {
-        viewModelScope.launch { repository.toggleMajor(lift) }
+        viewModelScope.launch {
+            if (repository.toggleMajor(lift)) backupAfterDataChange()
+        }
     }
 
     fun toggleArchived(lift: LiftEntity) {
         viewModelScope.launch {
-            if (lift.archived) repository.restoreLift(lift) else repository.archiveLift(lift)
+            val changed = if (lift.archived) repository.restoreLift(lift) else repository.archiveLift(lift)
+            if (changed) backupAfterDataChange()
         }
     }
 
     fun deleteEntry(id: Long) {
-        viewModelScope.launch { repository.deleteEntry(id) }
+        viewModelScope.launch {
+            if (repository.deleteEntry(id)) backupAfterDataChange()
+        }
     }
 
     fun addEntry(
@@ -91,6 +101,7 @@ class AppViewModel(
     ) {
         viewModelScope.launch {
             lastErrors = repository.addEntry(liftId, weight, unit, sets, reps, bodyweight, notes, performedAt)
+            if (lastErrors.isEmpty()) backupAfterDataChange()
         }
     }
 
@@ -215,6 +226,29 @@ class AppViewModel(
             BackupOperationResult.Failure("Google Drive needs authorization.")
         } catch (error: Exception) {
             BackupOperationResult.Failure(error.message ?: "Google Drive operation failed.")
+        }
+    }
+
+    private suspend fun backupAfterDataChange() {
+        if (backupCoordinator.accountEmail() == null) return
+
+        val result = runBackupOperation { backupCoordinator.backupNow() }
+        if (backupCoordinator.accountEmail() == null) return
+
+        when (result) {
+            is BackupOperationResult.Success -> _backupState.value = _backupState.value.copy(
+                driveReady = true,
+                latestBackup = result.file,
+                message = null,
+                authResolutionIntent = null,
+            )
+            is BackupOperationResult.Failure -> _backupState.value = _backupState.value.copy(
+                message = "Changes saved locally, but automatic backup failed: ${result.message}",
+            )
+            BackupOperationResult.NotSignedIn -> _backupState.value = _backupState.value.copy(
+                driveReady = false,
+                message = "Changes saved locally, but Drive authorization is not ready.",
+            )
         }
     }
 }

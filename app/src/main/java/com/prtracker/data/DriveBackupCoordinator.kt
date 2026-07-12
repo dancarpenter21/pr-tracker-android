@@ -2,6 +2,8 @@ package com.prtracker.data
 
 import android.content.Intent
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -10,10 +12,14 @@ class DriveBackupCoordinator(
     private val driveClient: DriveBackupClient,
     private val databaseBackupManager: DatabaseBackupManager,
 ) {
+    private val databaseOperationMutex = Mutex()
+
     fun accountEmail(): String? = authManager.accountEmail()
     fun isDriveReady(): Boolean = authManager.hasDrivePermission()
 
-    suspend fun signOut() = authManager.signOut()
+    suspend fun signOut() = databaseOperationMutex.withLock {
+        authManager.signOut()
+    }
 
     suspend fun latestBackup(): BackupOperationResult {
         val token = tokenOrReturn() ?: return BackupOperationResult.NotSignedIn
@@ -25,9 +31,9 @@ class DriveBackupCoordinator(
         )
     }
 
-    suspend fun backupNow(): BackupOperationResult {
-        val token = tokenOrReturn() ?: return BackupOperationResult.NotSignedIn
-        return runCatching {
+    suspend fun backupNow(): BackupOperationResult = databaseOperationMutex.withLock {
+        val token = tokenOrReturn() ?: return@withLock BackupOperationResult.NotSignedIn
+        runCatching {
             val snapshot = databaseBackupManager.createSnapshot()
             driveClient.uploadBackup(token, snapshot)
         }.fold(
@@ -36,9 +42,9 @@ class DriveBackupCoordinator(
         )
     }
 
-    suspend fun restoreNow(cacheDir: File): BackupOperationResult {
-        val token = tokenOrReturn() ?: return BackupOperationResult.NotSignedIn
-        return runCatching {
+    suspend fun restoreNow(cacheDir: File): BackupOperationResult = databaseOperationMutex.withLock {
+        val token = tokenOrReturn() ?: return@withLock BackupOperationResult.NotSignedIn
+        runCatching {
             val destination = withContext(Dispatchers.IO) {
                 File(cacheDir, "downloaded-${DatabaseBackupManager.BACKUP_FILE_NAME}")
             }

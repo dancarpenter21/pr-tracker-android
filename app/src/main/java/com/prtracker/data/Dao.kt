@@ -34,10 +34,10 @@ interface LiftDao {
     suspend fun update(lift: LiftEntity)
 
     @Query("UPDATE lifts SET archived = :archived, updatedAt = :updatedAt WHERE id = :id")
-    suspend fun setArchived(id: Long, archived: Boolean, updatedAt: Long = System.currentTimeMillis())
+    suspend fun setArchived(id: Long, archived: Boolean, updatedAt: Long = System.currentTimeMillis()): Int
 
     @Query("UPDATE lifts SET major = :major, updatedAt = :updatedAt WHERE id = :id")
-    suspend fun setMajor(id: Long, major: Boolean, updatedAt: Long = System.currentTimeMillis())
+    suspend fun setMajor(id: Long, major: Boolean, updatedAt: Long = System.currentTimeMillis()): Int
 }
 
 @Dao
@@ -65,5 +65,5 @@ interface EntryDao {
     suspend fun insert(entry: LiftEntryEntity): Long
 
     @Query("DELETE FROM lift_entries WHERE id = :id")
-    suspend fun delete(id: Long)
+    suspend fun delete(id: Long): Int
 }

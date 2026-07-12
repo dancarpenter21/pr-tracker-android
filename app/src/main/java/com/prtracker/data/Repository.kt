@@ -61,29 +61,31 @@ class Repository(private val db: AppDatabase) {
         ).forEach { db.liftDao().insert(it) }
     }
 
-    suspend fun saveProfile(sex: Sex, preferredUnit: WeightUnit): Result<Unit> {
+    suspend fun saveProfile(sex: Sex, preferredUnit: WeightUnit): Result<Boolean> {
         return runCatching {
             val currentProfile = db.profileDaoSnapshot()
-            db.profileDao().upsert(
-                currentProfile.copy(
-                    sex = sex.jsonValue,
-                    preferredUnit = preferredUnit.jsonValue,
-                ),
+            val updatedProfile = currentProfile.copy(
+                sex = sex.jsonValue,
+                preferredUnit = preferredUnit.jsonValue,
             )
+            if (updatedProfile == currentProfile) {
+                false
+            } else {
+                db.profileDao().upsert(updatedProfile)
+                true
+            }
         }
     }
 
-    suspend fun addLift(name: String) {
+    suspend fun addLift(name: String): Boolean {
         val cleanName = name.trim()
-        if (cleanName.isNotEmpty()) {
-            db.liftDao().insert(LiftEntity(name = cleanName))
-        }
+        return cleanName.isNotEmpty() && db.liftDao().insert(LiftEntity(name = cleanName)) != -1L
     }
 
-    suspend fun toggleMajor(lift: LiftEntity) = db.liftDao().setMajor(lift.id, !lift.major)
-    suspend fun archiveLift(lift: LiftEntity) = db.liftDao().setArchived(lift.id, true)
-    suspend fun restoreLift(lift: LiftEntity) = db.liftDao().setArchived(lift.id, false)
-    suspend fun deleteEntry(id: Long) = db.entryDao().delete(id)
+    suspend fun toggleMajor(lift: LiftEntity) = db.liftDao().setMajor(lift.id, !lift.major) > 0
+    suspend fun archiveLift(lift: LiftEntity) = db.liftDao().setArchived(lift.id, true) > 0
+    suspend fun restoreLift(lift: LiftEntity) = db.liftDao().setArchived(lift.id, false) > 0
+    suspend fun deleteEntry(id: Long) = db.entryDao().delete(id) > 0
 
     suspend fun addEntry(
         liftId: Long,
